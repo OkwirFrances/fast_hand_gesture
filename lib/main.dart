@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:camera/camera.dart';
 import 'package:hand_landmarker/hand_landmarker.dart';
+import 'package:hand_landmarker_example/onscreen_control.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
 
 late List<CameraDescription> cameras;
@@ -19,6 +20,9 @@ class SlideRemote extends StatefulWidget {
 }
 
 class _SlideRemoteState extends State<SlideRemote> {
+  int _currentIndex = 0;
+  final PageController _pageController = PageController();
+
   CameraController? _cam;
   HandLandmarkerPlugin? _plugin;
   WebSocketChannel? _ws;
@@ -80,7 +84,9 @@ class _SlideRemoteState extends State<SlideRemote> {
 
   // ---------- FRAME ----------
   Future<void> _onFrame(CameraImage frame) async {
-    if (_isDetecting || _plugin == null || _cam == null) return;
+    if (_currentIndex != 0 || _isDetecting || _plugin == null || _cam == null) {
+      return;
+    }
     _isDetecting = true;
 
     try {
@@ -118,9 +124,50 @@ class _SlideRemoteState extends State<SlideRemote> {
     }
     return Scaffold(
       appBar: AppBar(title: Text('Slide Remote – $_status')),
-      body: AspectRatio(
-        aspectRatio: _cam!.value.aspectRatio,
-        child: CameraPreview(_cam!),
+      body: PageView(
+        controller: _pageController,
+        onPageChanged: (index) {
+          setState(() {
+            _currentIndex = index;
+          });
+        },
+        children: [
+          AspectRatio(
+            aspectRatio: _cam!.value.aspectRatio,
+            child: CameraPreview(_cam!),
+          ),
+          OnscreenControl(
+            ws: _ws,
+            status: _status,
+            onCommand: (cmd) {
+              _ws?.sink.add(cmd);
+              setState(() => _status = cmd);
+            },
+          ),
+        ],
+      ),
+      bottomNavigationBar: BottomNavigationBar(
+        currentIndex: _currentIndex,
+        onTap: (index) {
+          setState(() {
+            _currentIndex = index;
+            _pageController.animateToPage(
+              index,
+              duration: const Duration(milliseconds: 300),
+              curve: Curves.easeInOut,
+            );
+          });
+        },
+        items: const [
+          BottomNavigationBarItem(
+            icon: Icon(Icons.camera),
+            label: 'Hand Gesture',
+          ),
+          BottomNavigationBarItem(
+            icon: Icon(Icons.touch_app),
+            label: 'Onscreen',
+          ),
+        ],
       ),
     );
   }
@@ -132,6 +179,7 @@ class _SlideRemoteState extends State<SlideRemote> {
     _plugin?.dispose();
     _reconnectTimer?.cancel();
     _ws?.sink.close();
+    _pageController.dispose();
     super.dispose();
   }
 }
